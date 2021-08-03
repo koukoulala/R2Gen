@@ -1,3 +1,8 @@
+data/iu_xray/
+data/mimic_cxr/
+ckpt/
+*.pth
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
