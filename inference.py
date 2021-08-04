@@ -1,24 +1,24 @@
+import os
+
 import torch
 import argparse
 import numpy as np
 from modules.tokenizers import Tokenizer
-from modules.dataloaders import R2DataLoader
-from modules.metrics import compute_scores
-from modules.optimizers import build_optimizer, build_lr_scheduler
-from modules.trainer import Trainer
-from modules.loss import compute_loss
 from models.r2gen import R2GenModel
-
+from torchvision import transforms
+from PIL import Image
 
 def parse_agrs():
     parser = argparse.ArgumentParser()
 
     # Data input settings
-    parser.add_argument('--image_dir', type=str, default='data/mimic_cxr/images/', help='the path to the directory containing the data.')
-    parser.add_argument('--ann_path', type=str, default='data/mimic_cxr/annotation.json', help='the path to the directory containing the data.')
+    parser.add_argument('--image_dir', type=str, default='data/test_images/', help='the path to the directory containing the data.')
+    parser.add_argument('--ann_path', type=str, default='data/mimic_cxr/annotation.json',
+                        help='the path to the directory containing the data.')
 
     # Data loader settings
-    parser.add_argument('--dataset_name', type=str, default='mimic_cxr', choices=['iu_xray', 'mimic_cxr'], help='the dataset to be used.')
+    parser.add_argument('--dataset_name', type=str, default='mimic_cxr', choices=['iu_xray', 'mimic_cxr'],
+                        help='the dataset to be used.')
     parser.add_argument('--max_seq_length', type=int, default=100, help='the maximum sequence length of the reports.')
     parser.add_argument('--threshold', type=int, default=10, help='the cut off frequency for the words.')
     parser.add_argument('--num_workers', type=int, default=2, help='the number of workers for dataloader.')
@@ -85,18 +85,17 @@ def parse_agrs():
     args = parser.parse_args()
     return args
 
-def _resume_checkpoint(model, optimizer, resume_path):
-    resume_path = str(resume_path)
-    print("Loading checkpoint: {} ...".format(resume_path))
-    checkpoint = torch.load(resume_path, map_location=torch.device('cpu'))
-    start_epoch = checkpoint['epoch'] + 1
-    mnt_best = checkpoint['monitor_best']
-    model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+def inference(model, images_path, transform, device):
 
-    print("Checkpoint loaded. Resume training from epoch {}".format(start_epoch))
-    return model, optimizer
+    model.eval()
+    with torch.no_grad():
+        image = Image.open(images_path).convert('RGB')
+        image = transform(image).to(device)
+        image = torch.unsqueeze(image, 0)
+        output = model(image, mode='sample')
+        reports = model.tokenizer.decode_batch(output.cpu().numpy())[0]
 
+    return reports
 
 def main():
     # parse arguments
@@ -108,52 +107,33 @@ def main():
     torch.backends.cudnn.benchmark = False
     np.random.seed(args.seed)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device", device)
+
     # create tokenizer
     tokenizer = Tokenizer(args)
 
-    # create data loader
-    train_dataloader = R2DataLoader(args, tokenizer, split='train', shuffle=True)
-    val_dataloader = R2DataLoader(args, tokenizer, split='val', shuffle=False)
-    test_dataloader = R2DataLoader(args, tokenizer, split='test', shuffle=False)
-
     # build model architecture
     model = R2GenModel(args, tokenizer)
-
-    # get function handles of loss and metrics
-    criterion = compute_loss
-    metrics = compute_scores
-
-    # build optimizer, learning rate scheduler
-    optimizer = build_optimizer(args, model)
-    lr_scheduler = build_lr_scheduler(args, optimizer)
-
-    model = model.to('cpu')
+    model = model.to(device)
     if args.resume is not None:
-        model, optimizer = _resume_checkpoint(model, optimizer, args.resume)
+        resume_path = str(args.resume)
+        print("Loading checkpoint: {} ...".format(resume_path))
+        checkpoint = torch.load(resume_path, map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['state_dict'])
 
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406),
+                             (0.229, 0.224, 0.225))])
 
-    model.eval()
-    with torch.no_grad():
-        test_gts, test_res = [], []
-        for batch_idx, (images_id, images, reports_ids, reports_masks) in enumerate(test_dataloader):
-            images, reports_ids, reports_masks = images.to('cpu'), reports_ids.to('cpu'), reports_masks.to('cpu')
-            output = model(images, mode='sample')
-            print(batch_idx, images_id, reports_ids, output)
-            reports = model.tokenizer.decode_batch(output.cpu().numpy())
-            print("reports", reports)
-            ground_truths = model.tokenizer.decode_batch(reports_ids[:, 1:].cpu().numpy())
-            print("ground_truths", ground_truths)
-            test_res.extend(reports)
-            test_gts.extend(ground_truths)
-        test_met = metrics({i: [gt] for i, gt in enumerate(test_gts)},
-                                    {i: [re] for i, re in enumerate(test_res)})
-        log = {'test_' + k: v for k, v in test_met.items()}
-        print(log)
+    for images_id in os.listdir(args.image_dir):
+        images_path = os.path.join(args.image_dir, images_id)
+        print("images_path", images_path)
 
-    # build trainer and start to train
-    trainer = Trainer(model, criterion, metrics, optimizer, args, lr_scheduler, train_dataloader, val_dataloader, test_dataloader)
-    trainer.train()
-
+        report = inference(model, images_path, transform, device)
+        print("report", report)
 
 if __name__ == '__main__':
     main()
