@@ -13,7 +13,7 @@ def parse_agrs():
 
     # Data input settings
     parser.add_argument('--image_dir', type=str, default='data/test_images/', help='the path to the directory containing the data.')
-    parser.add_argument('--ann_path', type=str, default='data/mimic_cxr/annotation.json',
+    parser.add_argument('--ann_path', type=str, default='data/test_images/annotation.json',
                         help='the path to the directory containing the data.')
 
     # Data loader settings
@@ -129,11 +129,12 @@ def main():
                              (0.229, 0.224, 0.225))])
 
     for images_id in os.listdir(args.image_dir):
-        images_path = os.path.join(args.image_dir, images_id)
-        print("images_path", images_path)
+        if images_id.endswith(".jpg"):
+            images_path = os.path.join(args.image_dir, images_id)
+            print("images_path", images_path)
 
-        report = inference(model, images_path, transform, device)
-        print("report", report)
+            report = inference(model, images_path, transform, device)
+            print("report", report)
 
 if __name__ == '__main__':
     main()
