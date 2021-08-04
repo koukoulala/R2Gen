@@ -41,19 +41,22 @@ transform = transforms.Compose([
 
 @app.route('/get_report/<filename>')
 def download(filename):
+    '''
     today = time.strftime("%Y-%m-%d", time.localtime(time.time()))
     today_dir = os.path.join(args.save_dir, today)
     if not os.path.isdir(today_dir):
         return "File doesn't exist!"
-
     app.config['UPLOAD_FOLDER'] = today_dir
+    '''
+
     images_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     print("images_path", images_path)
     report = inference(model, images_path, transform, device)
+    print("report", report)
 
     return report
 
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
