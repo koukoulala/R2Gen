@@ -83,11 +83,10 @@ parser.add_argument('--resume', type=str, default="./ckpt/model_mimic_cxr.pth", 
 
 args = parser.parse_args()
 
-def inference(model, images_path, transform, device):
+def inference(model, image, transform, device):
 
     model.eval()
     with torch.no_grad():
-        image = Image.open(images_path).convert('RGB')
         image = transform(image).to(device)
         image = torch.unsqueeze(image, 0)
         output = model(image, mode='sample')
