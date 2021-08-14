@@ -65,7 +65,7 @@ def allowed_file(filename):
 @app.route('/')
 def index():
     today = time.strftime("%Y-%m-%d", time.localtime(time.time()))
-    today_dir = os.path.join(args.save_dir, today)
+    today_dir = os.path.join("./upload", today)
     if not os.path.isdir(today_dir):
         os.mkdir(today_dir)
 
