@@ -2,6 +2,10 @@
 from flask import Flask, render_template, request, send_from_directory, send_file
 import os
 import time
+import requests
+import sys
+import codecs
+
 from inference import args, inference
 import torch
 import numpy as np
@@ -9,12 +13,12 @@ from modules.tokenizers import Tokenizer
 from models.r2gen import R2GenModel
 from torchvision import transforms
 
-import json
-import requests
 from PIL import Image
 import numpy as np
 import base64
 import io
+
+sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = "./upload"
@@ -24,6 +28,8 @@ if not os.path.isdir(app.config['UPLOAD_FOLDER']):
     os.mkdir(app.config['UPLOAD_FOLDER'])
 
 ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
+
+headers = {'content-type': 'application/json'}
 
 # fix random seeds
 torch.manual_seed(args.seed)
@@ -75,14 +81,18 @@ def upload():
         path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(path)
         app.config['latest_file'] = file.filename
+        print(file.filename)
+
+        image = Image.open(path).convert('RGB')
+        report = inference(model, image, transform, device)
+        print("report", report)
 
         # post
-        '''
-        data = {"ImageUrl": file.filename}
-        data = json.dumps(data)
-        r = requests.post("127.0.0.1:8081/medical_care/upload/success", data=data)
-        print(r.text)
-        '''
+        data = {"imgUrl": file.filename,
+                "report": report}
+        # r = requests.post("http://49.235.248.19:8081/medical_care/upload/success", json=data)
+        r = requests.post("http://127.0.0.1:8081/medical_care/upload/success", json=data)
+        print(r.json())
 
         return render_template('upload.html')
     else:
@@ -123,23 +133,6 @@ def get_report(filename):
 
     return report
 
-@app.route('/get_report_from_img', methods=['POST'])
-def get_report_from_img():
-    response = request.get_json()
-    data_str = response['image']
-    point = data_str.find(',')
-    base64_str = data_str[point:]  # remove unused part like this: "data:image/jpeg;base64,"
-
-    image = base64.b64decode(base64_str)
-    img = Image.open(io.BytesIO(image))
-
-    if (img.mode != 'RGB'):
-        image = img.convert("RGB")
-
-    report = inference(model, image, transform, device)
-    print("report", report)
-
-    return report
 
 
 if __name__ == '__main__':
